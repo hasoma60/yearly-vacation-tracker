@@ -50,3 +50,10 @@ skills-lock.json
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Cloudflare build artifacts
+.open-next/
+.wrangler/
+
+# Netlify deploy artifacts
+deploy-*.zip
