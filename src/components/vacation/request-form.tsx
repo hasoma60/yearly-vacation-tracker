@@ -1,18 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -20,25 +13,35 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, AlertTriangle } from "lucide-react";
+import { Loader2, AlertTriangle, Info } from "lucide-react";
 import { Id } from "../../../convex/_generated/dataModel";
+
+const LEAVE_TYPES = [
+  { value: "annual", label: "Annual Leave", description: "30 calendar days/year (UAE Labor Law Art. 29)" },
+  { value: "sick", label: "Sick Leave", description: "90 days: 15 full + 30 half + 45 unpaid" },
+  { value: "maternity", label: "Maternity Leave", description: "60 days: 45 full + 15 half pay" },
+  { value: "paternity", label: "Paternity Leave", description: "5 working days (within 6 months of birth)" },
+  { value: "bereavement", label: "Bereavement Leave", description: "5 days (spouse) or 3 days (family)" },
+  { value: "hajj", label: "Hajj Leave", description: "Up to 30 days unpaid (once per employment)" },
+  { value: "unpaid", label: "Unpaid Leave", description: "No pay" },
+] as const;
+
+type LeaveType = (typeof LEAVE_TYPES)[number]["value"];
 
 export function VacationRequestForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [periodNumber, setPeriodNumber] = useState<"1" | "2">("1");
+  const [leaveType, setLeaveType] = useState<LeaveType>("annual");
+  const [periodNumber, setPeriodNumber] = useState("1");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [replacementId, setReplacementId] = useState<string>("");
+  const [replacementId, setReplacementId] = useState("");
 
   const profile = useQuery(api.users.getMyProfile);
   const balance = useQuery(api.dashboard.getMyBalance);
-  const colleagues = useQuery(
-    api.users.listByDepartment,
-    profile?.departmentId
-      ? { departmentId: profile.departmentId, excludeUserId: profile._id }
-      : "skip"
+  const allEmployees = useQuery(
+    api.users.listAllActive,
+    profile ? { excludeUserId: profile._id } : "skip"
   );
 
   const overlapCheck = useQuery(
@@ -55,6 +58,11 @@ export function VacationRequestForm() {
 
   const submit = useMutation(api.vacationRequests.submit);
 
+  const selectedReplacementName = useMemo(() => {
+    if (!replacementId || !allEmployees) return "";
+    return allEmployees.find((e) => e._id === replacementId)?.name || "";
+  }, [replacementId, allEmployees]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!startDate || !endDate) {
@@ -65,7 +73,8 @@ export function VacationRequestForm() {
     setIsSubmitting(true);
     try {
       await submit({
-        periodNumber: Number(periodNumber) as 1 | 2,
+        leaveType,
+        periodNumber: Number(periodNumber) as 1 | 2 | 3 | 4,
         startDate,
         endDate,
         replacementId: replacementId
@@ -73,11 +82,12 @@ export function VacationRequestForm() {
           : undefined,
         year: new Date().getFullYear(),
       });
-      toast.success("Vacation request submitted successfully!");
+      toast.success("Leave request submitted successfully!");
       setStartDate("");
       setEndDate("");
       setReplacementId("");
       setPeriodNumber("1");
+      setLeaveType("annual");
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to submit request"
@@ -87,49 +97,73 @@ export function VacationRequestForm() {
     }
   };
 
-  // Calculate business days preview
-  const businessDays =
-    startDate && endDate ? calculatePreviewDays(startDate, endDate) : 0;
+  // UAE: Calendar days (all days count including weekends and public holidays)
+  const calendarDays = startDate && endDate ? calculateCalendarDays(startDate, endDate) : 0;
+  const selectedLeaveInfo = LEAVE_TYPES.find((t) => t.value === leaveType);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>New Vacation Request</CardTitle>
+        <CardTitle>New Leave Request</CardTitle>
         <CardDescription>
-          Submit a vacation request for approval. You can have up to 2 vacation
-          periods per year.
+          Submit a leave request per UAE Federal Decree-Law No. 33/2021.
+          Annual leave is counted in calendar days.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="grid gap-5 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="period">Vacation Period</Label>
-              <Select value={periodNumber} onValueChange={(v) => setPeriodNumber(v as "1" | "2")}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">Period 1</SelectItem>
-                  <SelectItem value="2">Period 2</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label>Leave Type</Label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={leaveType}
+                onChange={(e) => setLeaveType(e.target.value as LeaveType)}
+              >
+                {LEAVE_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+              {selectedLeaveInfo && (
+                <p className="text-xs text-muted-foreground flex items-start gap-1">
+                  <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                  {selectedLeaveInfo.description}
+                </p>
+              )}
             </div>
 
+            {leaveType === "annual" && (
+              <div className="space-y-2">
+                <Label>Period</Label>
+                <select
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  value={periodNumber}
+                  onChange={(e) => setPeriodNumber(e.target.value)}
+                >
+                  <option value="1">Period 1</option>
+                  <option value="2">Period 2</option>
+                  <option value="3">Period 3</option>
+                  <option value="4">Period 4</option>
+                </select>
+              </div>
+            )}
+
             <div className="space-y-2">
-              <Label htmlFor="replacement">Replacement Person</Label>
-              <Select value={replacementId} onValueChange={(v) => setReplacementId(v ?? "")}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select replacement..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {colleagues?.map((c) => (
-                    <SelectItem key={c._id} value={c._id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Replacement Person</Label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={replacementId}
+                onChange={(e) => setReplacementId(e.target.value)}
+              >
+                <option value="">Select replacement...</option>
+                {allEmployees?.map((c) => (
+                  <option key={c._id} value={c._id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="space-y-2">
@@ -156,27 +190,25 @@ export function VacationRequestForm() {
             </div>
           </div>
 
-          {businessDays > 0 && (
+          {calendarDays > 0 && (
             <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/30 p-3">
               <div className="text-sm">
-                <span className="text-muted-foreground">Business days: </span>
-                <span className="font-semibold">{businessDays}</span>
+                <span className="text-muted-foreground">Calendar days: </span>
+                <span className="font-semibold">{calendarDays}</span>
               </div>
-              {balance && (
+              {leaveType === "annual" && balance && (
                 <>
                   <span className="text-muted-foreground">|</span>
                   <div className="text-sm">
-                    <span className="text-muted-foreground">
-                      Remaining after:{" "}
-                    </span>
+                    <span className="text-muted-foreground">Remaining after: </span>
                     <span
                       className={`font-semibold ${
-                        balance.remaining - businessDays < 0
+                        balance.remaining - calendarDays < 0
                           ? "text-destructive"
                           : ""
                       }`}
                     >
-                      {balance.remaining - businessDays} days
+                      {balance.remaining - calendarDays} days
                     </span>
                   </div>
                 </>
@@ -190,7 +222,7 @@ export function VacationRequestForm() {
               <div className="text-sm">
                 <p className="font-medium text-yellow-500">Overlap Detected</p>
                 <p className="text-muted-foreground">
-                  Your replacement has a vacation during{" "}
+                  {selectedReplacementName} has leave during{" "}
                   {overlapCheck.conflictingRequest?.startDate} to{" "}
                   {overlapCheck.conflictingRequest?.endDate}. You can still
                   submit, but the manager will see this warning.
@@ -215,16 +247,9 @@ export function VacationRequestForm() {
   );
 }
 
-function calculatePreviewDays(start: string, end: string): number {
+function calculateCalendarDays(start: string, end: string): number {
   const s = new Date(start);
   const e = new Date(end);
   if (s > e) return 0;
-  let count = 0;
-  const current = new Date(s);
-  while (current <= e) {
-    const day = current.getDay();
-    if (day !== 0 && day !== 6) count++;
-    current.setDate(current.getDate() + 1);
-  }
-  return count;
+  return Math.floor((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 }

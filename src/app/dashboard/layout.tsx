@@ -4,7 +4,6 @@ import { useState } from "react";
 import { Authenticated, AuthLoading, Unauthenticated } from "convex/react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
-import { redirect } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
 export default function DashboardLayout({
@@ -22,7 +21,9 @@ export default function DashboardLayout({
         </div>
       </AuthLoading>
       <Unauthenticated>
-        {redirect("/signin")}
+        <div className="flex min-h-screen items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
       </Unauthenticated>
       <Authenticated>
         <div className="flex min-h-screen">

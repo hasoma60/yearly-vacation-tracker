@@ -3,7 +3,7 @@
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Card, CardContent } from "@/components/ui/card";
-import { CalendarDays, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import { CalendarDays, Clock, CheckCircle2, AlertCircle, ArrowRight } from "lucide-react";
 
 export function BalanceCard() {
   const balance = useQuery(api.dashboard.getMyBalance);
@@ -14,11 +14,12 @@ export function BalanceCard() {
 
   const stats = [
     {
-      label: "Annual Allowance",
+      label: "Annual Entitlement",
       value: balance.allowance,
-      suffix: "days",
+      suffix: "calendar days",
       icon: CalendarDays,
       color: "text-blue-500",
+      detail: "Per UAE Labor Law Art. 29",
     },
     {
       label: "Days Used",
@@ -28,7 +29,7 @@ export function BalanceCard() {
       color: "text-green-500",
     },
     {
-      label: "Pending",
+      label: "Pending Approval",
       value: balance.pending,
       suffix: "days",
       icon: Clock,
@@ -39,12 +40,22 @@ export function BalanceCard() {
       value: balance.remaining,
       suffix: "days",
       icon: AlertCircle,
-      color: balance.remaining <= 3 ? "text-red-500" : "text-emerald-500",
+      color: balance.remaining <= 5 ? "text-red-500" : "text-emerald-500",
     },
   ];
 
+  if (balance.carryForward > 0) {
+    stats.push({
+      label: "Carry Forward",
+      value: balance.carryForward,
+      suffix: "days (max 15)",
+      icon: ArrowRight,
+      color: "text-purple-500",
+    });
+  }
+
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
       {stats.map((stat) => (
         <Card key={stat.label}>
           <CardContent className="p-5">
@@ -55,10 +66,15 @@ export function BalanceCard() {
                 </p>
                 <p className="mt-1.5 text-2xl font-bold">
                   {stat.value}
-                  <span className="ml-1 text-sm font-normal text-muted-foreground">
+                  <span className="ml-1 text-xs font-normal text-muted-foreground">
                     {stat.suffix}
                   </span>
                 </p>
+                {"detail" in stat && stat.detail && (
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">
+                    {stat.detail}
+                  </p>
+                )}
               </div>
               <stat.icon className={`h-8 w-8 ${stat.color} opacity-80`} />
             </div>
@@ -71,7 +87,7 @@ export function BalanceCard() {
                   />
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {usedPercent}% of allowance used
+                  {usedPercent}% of entitlement used
                 </p>
               </div>
             )}

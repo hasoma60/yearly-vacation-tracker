@@ -11,6 +11,7 @@
 import type * as auth from "../auth.js";
 import type * as dashboard from "../dashboard.js";
 import type * as departments from "../departments.js";
+import type * as http from "../http.js";
 import type * as leaveSalary from "../leaveSalary.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_dates from "../lib/dates.js";
@@ -28,6 +29,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   dashboard: typeof dashboard;
   departments: typeof departments;
+  http: typeof http;
   leaveSalary: typeof leaveSalary;
   "lib/auth": typeof lib_auth;
   "lib/dates": typeof lib_dates;

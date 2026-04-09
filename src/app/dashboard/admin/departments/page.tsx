@@ -46,16 +46,12 @@ export default function DepartmentsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const departments = useQuery(api.departments.list);
-  const managers = useQuery(api.users.listEmployees, { role: "manager" });
-  const admins = useQuery(api.users.listEmployees, { role: "admin" });
+  const allEmployees = useQuery(api.users.listAllActive, {});
   const createDept = useMutation(api.departments.create);
   const updateDept = useMutation(api.departments.update);
   const removeDept = useMutation(api.departments.remove);
 
-  const allHeadCandidates = [
-    ...(managers || []),
-    ...(admins || []),
-  ];
+  const allHeadCandidates = allEmployees || [];
 
   const openForm = (dept?: typeof editDept) => {
     if (dept) {
@@ -192,18 +188,18 @@ export default function DepartmentsPage() {
             </div>
             <div className="space-y-2">
               <Label>Department Head</Label>
-              <Select value={headId} onValueChange={(v) => setHeadId(v ?? "")}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select head..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {allHeadCandidates.map((u) => (
-                    <SelectItem key={u._id} value={u._id}>
-                      {u.name} ({u.role})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={headId}
+                onChange={(e) => setHeadId(e.target.value)}
+              >
+                <option value="">Select head...</option>
+                {allHeadCandidates.map((u) => (
+                  <option key={u._id} value={u._id}>
+                    {u.name} ({u.role})
+                  </option>
+                ))}
+              </select>
             </div>
             <DialogFooter>
               <Button

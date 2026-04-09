@@ -44,7 +44,7 @@ export default function AccountsDashboard() {
     try {
       await releaseMutation({
         id: selectedId,
-        amount: amount ? Number(amount) : undefined,
+        totalAmount: amount ? Number(amount) : undefined,
       });
       toast.success("Leave salary released");
       setReleaseOpen(false);
@@ -92,10 +92,10 @@ export default function AccountsDashboard() {
           <CardContent className="flex items-center gap-3 p-4">
             <Wallet className="h-5 w-5 text-purple-500" />
             <div>
-              <p className="text-xs text-muted-foreground">Total Released Amount</p>
+              <p className="text-xs text-muted-foreground">Total Released (AED)</p>
               <p className="text-xl font-bold">
-                {releasedRecords
-                  ?.reduce((sum, r) => sum + (r.amount || 0), 0)
+                AED {releasedRecords
+                  ?.reduce((sum, r) => sum + (r.totalAmount || 0), 0)
                   .toLocaleString() || 0}
               </p>
             </div>
@@ -129,8 +129,9 @@ export default function AccountsDashboard() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Employee</TableHead>
-                      <TableHead>Vacation Period</TableHead>
+                      <TableHead>Leave Period</TableHead>
                       <TableHead className="text-center">Days</TableHead>
+                      <TableHead className="text-center">Calculated (AED)</TableHead>
                       <TableHead className="text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -150,6 +151,14 @@ export default function AccountsDashboard() {
                         </TableCell>
                         <TableCell className="text-center">
                           {rec.request?.daysUsed}
+                        </TableCell>
+                        <TableCell className="text-center text-sm">
+                          {rec.totalAmount ? `AED ${rec.totalAmount.toLocaleString()}` : "-"}
+                          {rec.basicAmount ? (
+                            <span className="block text-xs text-muted-foreground">
+                              Basic: {rec.basicAmount.toLocaleString()} + Allow: {rec.allowancesAmount?.toLocaleString() || 0}
+                            </span>
+                          ) : null}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
@@ -189,7 +198,7 @@ export default function AccountsDashboard() {
                     <TableRow>
                       <TableHead>Employee</TableHead>
                       <TableHead>Vacation Period</TableHead>
-                      <TableHead className="text-center">Amount</TableHead>
+                      <TableHead className="text-center">Amount (AED)</TableHead>
                       <TableHead>Released By</TableHead>
                       <TableHead>Released At</TableHead>
                     </TableRow>
@@ -209,7 +218,7 @@ export default function AccountsDashboard() {
                           )}
                         </TableCell>
                         <TableCell className="text-center font-medium">
-                          {rec.amount?.toLocaleString() || "-"}
+                          {rec.totalAmount ? `AED ${rec.totalAmount.toLocaleString()}` : "-"}
                         </TableCell>
                         <TableCell>{rec.releasedByUser?.name || "-"}</TableCell>
                         <TableCell className="text-muted-foreground">
@@ -233,13 +242,16 @@ export default function AccountsDashboard() {
             <DialogTitle>Release Leave Salary</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              UAE Labor Law: Leave salary = (Basic + Fixed Allowances) / 30 x Leave Days
+            </p>
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                Amount (optional)
+                Total Amount (AED) - Override if needed
               </label>
               <Input
                 type="number"
-                placeholder="Enter amount..."
+                placeholder="Auto-calculated from salary..."
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
               />

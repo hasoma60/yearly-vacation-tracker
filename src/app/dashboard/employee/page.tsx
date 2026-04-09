@@ -1,15 +1,29 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { BalanceCard } from "@/components/vacation/balance-card";
 import { RequestCard } from "@/components/vacation/request-card";
 import { Button } from "@/components/ui/button";
-import { Loader2, CalendarPlus } from "lucide-react";
+import { Loader2, CalendarPlus, X } from "lucide-react";
+import { toast } from "sonner";
 import Link from "next/link";
+import { Id } from "../../../../convex/_generated/dataModel";
 
 export default function EmployeeDashboard() {
   const requests = useQuery(api.vacationRequests.listMine, {});
+  const cancelRequest = useMutation(api.vacationRequests.cancel);
+
+  const handleCancel = async (id: Id<"vacationRequests">) => {
+    try {
+      await cancelRequest({ id });
+      toast.success("Request cancelled");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to cancel"
+      );
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -48,7 +62,22 @@ export default function EmployeeDashboard() {
         ) : (
           <div className="space-y-3">
             {requests.map((req) => (
-              <RequestCard key={req._id} request={req} />
+              <div key={req._id} className="relative">
+                <RequestCard request={req} />
+                {req.status === "pending" && (
+                  <div className="absolute right-4 top-4">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => handleCancel(req._id)}
+                    >
+                      <X className="mr-1 h-3.5 w-3.5" />
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         )}

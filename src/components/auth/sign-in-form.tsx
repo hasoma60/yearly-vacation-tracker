@@ -72,14 +72,14 @@ export function SignInForm() {
             </div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">Username or Email</Label>
             <Input
               id="email"
               name="email"
-              type="email"
-              placeholder="you@company.com"
+              type="text"
+              placeholder="username or email"
               required
-              autoComplete="email"
+              autoComplete="username"
             />
           </div>
           <div className="space-y-2">

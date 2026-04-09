@@ -1,11 +1,20 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireAuth, requireRole } from "./lib/auth";
-import { calculateNetworkDays, detectOverlap } from "./lib/dates";
+import { calculateCalendarDays, detectOverlap, calculateLeaveSalary } from "./lib/dates";
 
 export const submit = mutation({
   args: {
-    periodNumber: v.union(v.literal(1), v.literal(2)),
+    leaveType: v.union(
+      v.literal("annual"),
+      v.literal("sick"),
+      v.literal("maternity"),
+      v.literal("paternity"),
+      v.literal("bereavement"),
+      v.literal("hajj"),
+      v.literal("unpaid")
+    ),
+    periodNumber: v.union(v.literal(1), v.literal(2), v.literal(3), v.literal(4)),
     startDate: v.string(),
     endDate: v.string(),
     replacementId: v.optional(v.id("users")),
@@ -18,39 +27,66 @@ export const submit = mutation({
       throw new Error("Start date must be before end date");
     }
 
-    const daysUsed = calculateNetworkDays(args.startDate, args.endDate);
+    // UAE: Calendar days (public holidays excluded)
+    const daysUsed = calculateCalendarDays(args.startDate, args.endDate);
     if (daysUsed <= 0) {
-      throw new Error("Vacation must include at least one business day");
+      throw new Error("Leave must include at least one day");
     }
 
-    // Check for existing period request
-    const existingRequests = await ctx.db
-      .query("vacationRequests")
-      .withIndex("by_employee_year", (q) =>
-        q.eq("employeeId", userId).eq("year", args.year)
-      )
-      .filter((q) => q.neq(q.field("status"), "rejected"))
-      .collect();
+    // For annual leave, check existing requests and balance
+    if (args.leaveType === "annual") {
+      const existingRequests = await ctx.db
+        .query("vacationRequests")
+        .withIndex("by_employee_year", (q) =>
+          q.eq("employeeId", userId).eq("year", args.year)
+        )
+        .filter((q) =>
+          q.and(
+            q.neq(q.field("status"), "rejected"),
+            q.eq(q.field("leaveType"), "annual")
+          )
+        )
+        .collect();
 
-    const samePeriod = existingRequests.find(
-      (r) => r.periodNumber === args.periodNumber
-    );
-    if (samePeriod) {
-      throw new Error(
-        `You already have a vacation request for period ${args.periodNumber} this year`
+      const samePeriod = existingRequests.find(
+        (r) => r.periodNumber === args.periodNumber
       );
+      if (samePeriod) {
+        throw new Error(
+          `You already have annual leave for period ${args.periodNumber} this year`
+        );
+      }
+
+      // UAE: 30 calendar days annual leave entitlement
+      const totalUsed = existingRequests.reduce((sum, r) => sum + r.daysUsed, 0);
+      const totalAllowance = user.annualAllowance + (user.carryForwardDays || 0);
+      if (totalUsed + daysUsed > totalAllowance) {
+        throw new Error(
+          `Insufficient balance. You have ${totalAllowance - totalUsed} days remaining (including carry-forward).`
+        );
+      }
     }
 
-    // Check balance
-    const totalUsed = existingRequests.reduce((sum, r) => sum + r.daysUsed, 0);
-    if (totalUsed + daysUsed > user.annualAllowance) {
-      throw new Error(
-        `Insufficient balance. You have ${user.annualAllowance - totalUsed} days remaining.`
-      );
+    // Hajj leave: once per employment
+    if (args.leaveType === "hajj") {
+      const existingHajj = await ctx.db
+        .query("vacationRequests")
+        .withIndex("by_employee", (q) => q.eq("employeeId", userId))
+        .filter((q) =>
+          q.and(
+            q.neq(q.field("status"), "rejected"),
+            q.eq(q.field("leaveType"), "hajj")
+          )
+        )
+        .collect();
+      if (existingHajj.length > 0) {
+        throw new Error("Hajj leave can only be taken once per employment");
+      }
     }
 
     const requestId = await ctx.db.insert("vacationRequests", {
       employeeId: userId,
+      leaveType: args.leaveType,
       periodNumber: args.periodNumber,
       startDate: args.startDate,
       endDate: args.endDate,
@@ -61,7 +97,7 @@ export const submit = mutation({
       year: args.year,
     });
 
-    // Notify managers in the same department
+    // Notify managers
     if (user.departmentId) {
       const managers = await ctx.db
         .query("users")
@@ -83,7 +119,7 @@ export const submit = mutation({
         await ctx.db.insert("notifications", {
           userId: manager._id,
           type: "request_submitted",
-          message: `${user.name} submitted a vacation request (${args.startDate} to ${args.endDate})`,
+          message: `${user.name} submitted ${args.leaveType} leave (${args.startDate} to ${args.endDate}, ${daysUsed} calendar days)`,
           relatedRequestId: requestId,
           isRead: false,
         });
@@ -130,37 +166,52 @@ export const approve = mutation({
       reviewNote: args.note,
     });
 
-    // Create leave salary record
-    await ctx.db.insert("leaveSalary", {
-      vacationRequestId: args.id,
-      employeeId: request.employeeId,
-      status: "pending",
-    });
+    // Create leave salary record with UAE calculation
+    const employee = await ctx.db.get(request.employeeId);
+    if (employee && request.leaveType === "annual") {
+      const basicSalary = employee.basicSalary || 0;
+      const fixedAllowances = employee.fixedAllowances || 0;
+      const salaryCalc = calculateLeaveSalary(
+        basicSalary,
+        fixedAllowances,
+        request.daysUsed
+      );
+
+      await ctx.db.insert("leaveSalary", {
+        vacationRequestId: args.id,
+        employeeId: request.employeeId,
+        basicAmount: salaryCalc.basicAmount,
+        allowancesAmount: salaryCalc.allowancesAmount,
+        totalAmount: salaryCalc.totalAmount,
+        status: "pending",
+      });
+    }
 
     // Notify employee
-    const employee = await ctx.db.get(request.employeeId);
     await ctx.db.insert("notifications", {
       userId: request.employeeId,
       type: "request_approved",
-      message: `Your vacation request (${request.startDate} to ${request.endDate}) has been approved${args.note ? `: ${args.note}` : ""}`,
+      message: `Your ${request.leaveType} leave (${request.startDate} to ${request.endDate}) has been approved${args.note ? `: ${args.note}` : ""}`,
       relatedRequestId: args.id,
       isRead: false,
     });
 
-    // Notify accounts
-    const accountsUsers = await ctx.db
-      .query("users")
-      .withIndex("by_role", (q) => q.eq("role", "accounts"))
-      .filter((q) => q.eq(q.field("isActive"), true))
-      .collect();
-    for (const acc of accountsUsers) {
-      await ctx.db.insert("notifications", {
-        userId: acc._id,
-        type: "request_approved",
-        message: `${employee?.name}'s vacation approved - leave salary pending release`,
-        relatedRequestId: args.id,
-        isRead: false,
-      });
+    // Notify accounts for annual leave
+    if (request.leaveType === "annual") {
+      const accountsUsers = await ctx.db
+        .query("users")
+        .withIndex("by_role", (q) => q.eq("role", "accounts"))
+        .filter((q) => q.eq(q.field("isActive"), true))
+        .collect();
+      for (const acc of accountsUsers) {
+        await ctx.db.insert("notifications", {
+          userId: acc._id,
+          type: "request_approved",
+          message: `${employee?.name}'s annual leave approved - leave salary pending release`,
+          relatedRequestId: args.id,
+          isRead: false,
+        });
+      }
     }
   },
 });
@@ -188,7 +239,7 @@ export const reject = mutation({
     await ctx.db.insert("notifications", {
       userId: request.employeeId,
       type: "request_rejected",
-      message: `Your vacation request (${request.startDate} to ${request.endDate}) was rejected${args.note ? `: ${args.note}` : ""}`,
+      message: `Your ${request.leaveType} leave (${request.startDate} to ${request.endDate}) was rejected${args.note ? `: ${args.note}` : ""}`,
       relatedRequestId: args.id,
       isRead: false,
     });
@@ -243,7 +294,6 @@ export const listPending = query({
       .withIndex("by_status", (q) => q.eq("status", "pending"))
       .collect();
 
-    // Managers only see their department's requests
     if (user.role === "manager" && user.departmentId) {
       const deptUsers = await ctx.db
         .query("users")
@@ -315,7 +365,6 @@ export const listVisible = query({
       .filter((q) => q.neq(q.field("status"), "rejected"))
       .collect();
 
-    // Employees: filter out confidential requests (except own)
     const visible =
       user.role === "employee"
         ? requests.filter(
@@ -388,7 +437,12 @@ export const getYearSummary = query({
       0
     );
 
-    // Count overlaps
+    // Count by leave type
+    const byLeaveType: Record<string, number> = {};
+    for (const req of requests.filter((r) => r.status !== "rejected")) {
+      byLeaveType[req.leaveType] = (byLeaveType[req.leaveType] || 0) + 1;
+    }
+
     let overlapsFound = 0;
     for (const req of requests.filter((r) => r.status !== "rejected" && r.replacementId)) {
       const replacementRequests = requests.filter(
@@ -405,18 +459,6 @@ export const getYearSummary = query({
       }
     }
 
-    const splitVacations = new Set<string>();
-    const singleVacations = new Set<string>();
-    for (const req of requests.filter((r) => r.status !== "rejected")) {
-      const empId = req.employeeId;
-      if (req.periodNumber === 2) {
-        splitVacations.add(empId);
-        singleVacations.delete(empId);
-      } else if (!splitVacations.has(empId)) {
-        singleVacations.add(empId);
-      }
-    }
-
     return {
       totalEmployees: activeUsers.filter((u) => u.role === "employee" || u.role === "manager").length,
       totalApproved: approved.length,
@@ -429,8 +471,7 @@ export const getYearSummary = query({
           : 0,
       totalAllowance,
       overlapsFound,
-      splitVacations: splitVacations.size,
-      singleVacations: singleVacations.size,
+      byLeaveType,
     };
   },
 });

@@ -79,6 +79,21 @@ export const listByDepartment = query({
   },
 });
 
+export const listAllActive = query({
+  args: { excludeUserId: v.optional(v.id("users")) },
+  handler: async (ctx, args) => {
+    await requireAuth(ctx);
+    const users = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+    if (args.excludeUserId) {
+      return users.filter((u) => u._id !== args.excludeUserId);
+    }
+    return users;
+  },
+});
+
 export const createEmployee = mutation({
   args: {
     email: v.string(),
@@ -91,6 +106,9 @@ export const createEmployee = mutation({
     ),
     departmentId: v.optional(v.id("departments")),
     annualAllowance: v.number(),
+    joinDate: v.optional(v.string()),
+    basicSalary: v.optional(v.number()),
+    fixedAllowances: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, ["admin"]);
@@ -109,6 +127,10 @@ export const createEmployee = mutation({
       role: args.role,
       departmentId: args.departmentId,
       annualAllowance: args.annualAllowance,
+      joinDate: args.joinDate,
+      basicSalary: args.basicSalary,
+      fixedAllowances: args.fixedAllowances,
+      carryForwardDays: 0,
       isActive: true,
     });
   },
@@ -128,6 +150,10 @@ export const updateEmployee = mutation({
     ),
     departmentId: v.optional(v.id("departments")),
     annualAllowance: v.optional(v.number()),
+    joinDate: v.optional(v.string()),
+    basicSalary: v.optional(v.number()),
+    fixedAllowances: v.optional(v.number()),
+    carryForwardDays: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, ["admin"]);

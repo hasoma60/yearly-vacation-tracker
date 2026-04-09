@@ -64,7 +64,8 @@ export const listByEmployee = query({
 export const release = mutation({
   args: {
     id: v.id("leaveSalary"),
-    amount: v.optional(v.number()),
+    // Override amounts if needed
+    totalAmount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { userId } = await requireRole(ctx, ["admin", "accounts"]);
@@ -76,17 +77,18 @@ export const release = mutation({
 
     await ctx.db.patch(args.id, {
       status: "released",
-      amount: args.amount,
+      totalAmount: args.totalAmount ?? record.totalAmount,
       releasedBy: userId,
       releasedAt: Date.now(),
     });
 
     // Notify employee
     const request = await ctx.db.get(record.vacationRequestId);
+    const displayAmount = args.totalAmount ?? record.totalAmount;
     await ctx.db.insert("notifications", {
       userId: record.employeeId,
       type: "salary_released",
-      message: `Your leave salary${args.amount ? ` of ${args.amount}` : ""} for vacation (${request?.startDate} to ${request?.endDate}) has been released`,
+      message: `Your leave salary${displayAmount ? ` of AED ${displayAmount.toLocaleString()}` : ""} for leave (${request?.startDate} to ${request?.endDate}) has been released`,
       relatedRequestId: record.vacationRequestId,
       isRead: false,
     });
